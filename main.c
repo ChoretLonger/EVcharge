@@ -57,23 +57,15 @@ OF SUCH DAMAGE.
 #define   IO595_dat_H   GPIO_BOP(GPIOA)=IO595_dat 
 #define   IO595_dat_L   GPIO_BC(GPIOA)=IO595_dat
 
-#define   Prashort_H    GPIO_BOP(GPIOA)=GPIO_PIN_0 
-#define   Prashort_L    GPIO_BC(GPIOA)=GPIO_PIN_0
-#define   Nshort_H    GPIO_BOP(GPIOA)=GPIO_PIN_9 
-#define   Nshort_L    GPIO_BC(GPIOA)=GPIO_PIN_9
-#define   Pshort_H    GPIO_BOP(GPIOA)=GPIO_PIN_10 
-#define   Pshort_L    GPIO_BC(GPIOA)=GPIO_PIN_10
 
-unsigned int u_timeout ;
-uint32_t EPR2set , ESR2set , EPC2set , pul2set ;
-uint16_t plug_sta , plug_stashift ;
-unsigned char datin_buf[30] ;
-unsigned char buf_add ;
-unsigned char board_id ;
+unsigned char rx_buffer[128] ;
+unsigned char rx_count ;
+unsigned char Tx_buffer[128] ;
+unsigned char Tx_count ;
 
-unsigned char pullup_en , pulldown_en , matched ;
+unsigned int overtime , maxmin ;
 
-unsigned char unicnt , openloadcnt , shortloadcnt , shortgndcnt ;
+__IO uint16_t ad_value[220];
 
 void RCC_Configuration(void)
 {
@@ -103,22 +95,22 @@ void uart_init(void)
   rcu_periph_clock_enable(RCU_USART0);
 
   /* connect port to USARTx_Tx */
-  gpio_af_set(GPIOA, GPIO_AF_1, GPIO_PIN_2);
+  gpio_af_set(GPIOA, GPIO_AF_1, GPIO_PIN_9);
 
   /* connect port to USARTx_Rx */
-  gpio_af_set(GPIOA, GPIO_AF_1, GPIO_PIN_3);
+  gpio_af_set(GPIOA, GPIO_AF_1, GPIO_PIN_10);
 
   /* configure USART Tx as alternate function push-pull */
-  gpio_mode_set(GPIOA, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO_PIN_2);
-  gpio_output_options_set(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_10MHZ, GPIO_PIN_2);
+  gpio_mode_set(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO_PIN_9);
+  gpio_output_options_set(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_10MHZ, GPIO_PIN_9);
 
   /* configure USART Rx as alternate function push-pull */
-  gpio_mode_set(GPIOA, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO_PIN_3);
-  gpio_output_options_set(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_10MHZ, GPIO_PIN_3);
+  gpio_mode_set(GPIOA, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO_PIN_10);
+  gpio_output_options_set(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_10MHZ, GPIO_PIN_10);
 
   /* USART configure */
   usart_deinit(USART0);
-  usart_baudrate_set(USART0, 9600U);
+  usart_baudrate_set(USART0, 115200U);
   usart_transmit_config(USART0, USART_TRANSMIT_ENABLE);
   usart_receive_config(USART0, USART_RECEIVE_ENABLE);
   usart_enable(USART0);
@@ -133,8 +125,9 @@ void USART0_IRQHandler(void)
 {
     if (RESET != usart_interrupt_flag_get(USART0, USART_INT_FLAG_RBNE)){
         /* receive data */
-        //rx_buffer[rx_count++] = usart_data_receive(USART0);
-        usart_data_transmit(USART0, usart_data_receive(USART0));
+        rx_buffer[rx_count++] = usart_data_receive(USART0);
+        overtime = 0 ;
+        //usart_data_transmit(USART0, usart_data_receive(USART0));
         //datin_buf[buf_add] = usart_data_receive(USART0) ;
         //buf_add ++ ;
         //u_timeout = 0 ;
@@ -156,122 +149,110 @@ void IOpin_init(void)
 {
   rcu_periph_clock_enable(RCU_GPIOA);
   gpio_deinit(GPIOA);
-  gpio_mode_set(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, IO595_oe|IO595_rst|IO595_clk|IO595_stb|IO595_dat);
-  gpio_output_options_set(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, IO595_oe|IO595_rst|IO595_clk|IO595_stb|IO595_dat);
+  //gpio_mode_set(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, IO595_oe|IO595_rst|IO595_clk|IO595_stb|IO595_dat);
+  //gpio_output_options_set(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, IO595_oe|IO595_rst|IO595_clk|IO595_stb|IO595_dat);
   /* configure IO GPIO port */
-  gpio_mode_set(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE,GPIO_PIN_0 | GPIO_PIN_9 | GPIO_PIN_10);
-  gpio_output_options_set(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ,GPIO_PIN_1 | GPIO_PIN_4);
+  gpio_mode_set(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE,GPIO_PIN_4);
+  gpio_output_options_set(GPIOA, GPIO_OTYPE_OD, GPIO_OSPEED_50MHZ,GPIO_PIN_4);
   
-  rcu_periph_clock_enable(RCU_GPIOF);
-  gpio_deinit(GPIOF);
-  gpio_mode_set(GPIOF, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, GPIO_PIN_0 | GPIO_PIN_1);
-  gpio_output_options_set(GPIOF, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_0 | GPIO_PIN_1);
+  gpio_mode_set(GPIOA, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,GPIO_PIN_0);
   
-  rcu_periph_clock_enable(RCU_GPIOB);
-  gpio_deinit(GPIOB);
-  gpio_mode_set(GPIOB, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, GPIO_PIN_1);
-  gpio_output_options_set(GPIOB, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_1);
+  //rcu_periph_clock_enable(RCU_GPIOF);
+  //gpio_deinit(GPIOF);
+  //gpio_mode_set(GPIOF, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, GPIO_PIN_0 | GPIO_PIN_1);
+  //gpio_output_options_set(GPIOF, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_0 | GPIO_PIN_1);
+  //
+  //rcu_periph_clock_enable(RCU_GPIOB);
+  //gpio_deinit(GPIOB);
+  //gpio_mode_set(GPIOB, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, GPIO_PIN_1);
+  //gpio_output_options_set(GPIOB, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_1);
 }
 
-void set_IO(uint16_t out,unsigned char bitcnt)
+void AD_config(void)
 {
-  uint8_t bit595_cnt ;
-  for(bit595_cnt = bitcnt;bit595_cnt;bit595_cnt --)
-  {
-    if(out & 0x8000) { 
-      IO595_dat_L ; 
-      IO595_clk_L ;
-      IO595_clk_L ;
-      IO595_clk_L ;
-      IO595_clk_H ;
-      IO595_clk_H ;
-      IO595_clk_L ;
-      IO595_dat_H ; 
-      IO595_clk_L ;
-      IO595_clk_L ;
-      IO595_clk_L ;
-      IO595_clk_H ;
-      IO595_clk_H ;
-      IO595_clk_L ;
-    }
-    else{
-      IO595_dat_H ; 
-      IO595_clk_L ;
-      IO595_clk_L ;
-      IO595_clk_L ;
-      IO595_clk_H ;
-      IO595_clk_H ;
-      IO595_clk_L ;
-      IO595_dat_L ; 
-      IO595_clk_L ;
-      IO595_clk_L ;
-      IO595_clk_L ;
-      IO595_clk_H ;
-      IO595_clk_H ;
-      IO595_clk_L ;
-    }
-    out = out << 1 ;
-  }
-  //IO595_stb_H ;
-  //IO595_stb_H ;
-  //IO595_stb_H ;
-  //IO595_stb_H ;
-  //IO595_stb_L ;
-}
+  timer_oc_parameter_struct timer_ocintpara;
+  timer_parameter_struct timer_initpara;
 
-void core_state_update(uint32_t ESR_P_ohm,
-                       uint32_t ESR_N_ohm,
-                       uint32_t EPR_ohm,
-                       uint32_t pullup_P_ohm,
-                       uint32_t pulldown_N_ohm,
-                       uint32_t EPC_pf)
-{
-  ESR_P_ohm      = ESR_P_ohm / 5 ;
-  ESR_N_ohm      = ESR_N_ohm / 5 ;
-  EPR_ohm        = EPR_ohm / 5 ;
-  pullup_P_ohm   = pullup_P_ohm / 5 ;
-  pulldown_N_ohm = pulldown_N_ohm / 5 ;
-  EPC_pf         = EPC_pf / 10 ;
+  dma_parameter_struct dma_init_struct;
   
-  EPR_ohm = EPR_ohm << 4 ;
-  set_IO(EPR_ohm,12);
-  
-  ESR_P_ohm = ESR_P_ohm << 4 ;
-  set_IO(ESR_P_ohm,12);
-  
-  ESR_N_ohm = ESR_N_ohm << 4 ;
-  set_IO(ESR_N_ohm,12);
-  
-  EPC_pf = EPC_pf << 4 ;  // due to hardware , high 8 bit EPC
-  set_IO(EPC_pf,8);
-  
-  pulldown_N_ohm = pulldown_N_ohm << 4 ;
-  if(pulldown_en) pulldown_N_ohm |= 0x8000 ;
-  else            pulldown_N_ohm &= 0x7fff ;
-  set_IO(pulldown_N_ohm,12);
-  
-  pullup_P_ohm = pullup_P_ohm << 4 ;
-  if(pullup_en) pullup_P_ohm |= 0x8000 ;
-  else            pullup_P_ohm &= 0x7fff ;
-  set_IO(pullup_P_ohm,12);
-  
-  EPC_pf = EPC_pf << 8 ;  // then low 4 bit
-  set_IO(EPC_pf,4);
-  
-  IO595_stb_H ;
-  IO595_stb_H ;
-  IO595_stb_H ;
-  IO595_stb_H ;
-  IO595_stb_L ;
-  
-  IO595_oe_L ;
-  delay_1ms(12);
-  IO595_oe_H ;
-}
+  /* ADCCLK = PCLK2/6 */
+  rcu_adc_clock_config(RCU_ADCCK_APB2_DIV6);
 
-void plug_state_update(uint16_t setplug)
-{
-  set_IO(setplug,12);
+  /* enable dma1 and gpioc clock */
+  rcu_periph_clock_enable(RCU_DMA);
+
+  /* enable adc1 clock */
+  rcu_periph_clock_enable(RCU_ADC);
+
+  /* enable timer1 clock */
+  rcu_periph_clock_enable(RCU_TIMER1);
+
+  /* ------------------------------- initialize DMA channel0 -------------------------------- */
+  dma_deinit(DMA_CH0);
+  dma_init_struct.direction = DMA_PERIPHERAL_TO_MEMORY;
+  dma_init_struct.memory_addr = (uint32_t)ad_value;
+  dma_init_struct.memory_inc = DMA_MEMORY_INCREASE_ENABLE;
+  dma_init_struct.memory_width = DMA_MEMORY_WIDTH_16BIT;
+  dma_init_struct.number = 220;
+  dma_init_struct.periph_addr = (uint32_t)&(ADC_RDATA);
+  dma_init_struct.periph_inc = DMA_PERIPH_INCREASE_DISABLE;
+  dma_init_struct.periph_width = DMA_PERIPHERAL_WIDTH_16BIT;
+  dma_init_struct.priority = DMA_PRIORITY_ULTRA_HIGH;
+  dma_init(DMA_CH0,&dma_init_struct);
+
+  /* configure DMA mode */
+  dma_circulation_enable(DMA_CH0);
+  dma_memory_to_memory_disable(DMA_CH0);
+
+  /* enable DMA channel0 */
+  dma_channel_enable(DMA_CH0);
+  
+  /*  ------------------------------- TIMER1 configuration  ------------------------------- */
+  timer_deinit(TIMER1);
+  timer_initpara.prescaler         = 500;
+  timer_initpara.alignedmode       = TIMER_COUNTER_EDGE;
+  timer_initpara.counterdirection  = TIMER_COUNTER_UP;
+  timer_initpara.period            = 199;
+  timer_initpara.clockdivision     = TIMER_CKDIV_DIV1;
+  timer_initpara.repetitioncounter = 0;
+  timer_init(TIMER1,&timer_initpara);
+
+  /* CH1 configuration in PWM mode1 */
+  timer_ocintpara.ocpolarity  = TIMER_OC_POLARITY_LOW;
+  timer_ocintpara.outputstate = TIMER_CCX_ENABLE;
+  timer_channel_output_config(TIMER1,TIMER_CH_1,&timer_ocintpara);
+
+  timer_channel_output_pulse_value_config(TIMER1,TIMER_CH_1,100);
+  timer_channel_output_mode_config(TIMER1,TIMER_CH_1,TIMER_OC_MODE_PWM1);
+  timer_channel_output_shadow_config(TIMER1,TIMER_CH_1,TIMER_OC_SHADOW_DISABLE);
+
+  /* auto-reload preload enable */
+  timer_auto_reload_shadow_enable(TIMER1);
+  
+  /*  ------------------------------- ADC configuration  ------------------------------- */
+  /* ADC channel length config */
+  adc_channel_length_config(ADC_REGULAR_CHANNEL,1);
+
+  /* ADC regular channel config */
+  adc_regular_channel_config(0,ADC_CHANNEL_0,ADC_SAMPLETIME_55POINT5);
+
+  /* ADC external trigger enable */
+  adc_external_trigger_config(ADC_REGULAR_CHANNEL,ENABLE);
+  /* ADC external trigger source config */
+  adc_external_trigger_source_config(ADC_REGULAR_CHANNEL,ADC_EXTTRIG_REGULAR_T1_CH1);
+  /* ADC data alignment config */
+  adc_data_alignment_config(ADC_DATAALIGN_RIGHT);
+  /* enable ADC interface */
+  adc_enable();
+  /* ADC calibration and reset calibration */
+  adc_calibration_enable();
+  /* ADC SCAN function enable */
+  adc_special_function_config(ADC_SCAN_MODE,ENABLE);
+  /* ADC DMA function enable */
+  adc_dma_mode_enable();
+  
+  /* TIMER1 counter enable */
+  //timer_enable(TIMER1);
 }
 
 /*!
@@ -287,42 +268,44 @@ int main(void)
       
     IOpin_init();
 
-    gpio_bit_reset(GPIOA, GPIO_PIN_1 | GPIO_PIN_4);
-
     /* setup SysTick Timer for 1ms interrupts  */
-    systick_config();
+    //systick_config();
     
     uart_init();
     
-    IO595_oe_L ;
-    IO595_rst_H;
-    IO595_clk_L;
-    IO595_stb_L;
-    IO595_dat_L;
+    usart_data_transmit(USART0, 0x00);
     
-    board_id = 0 ;
-    if(SET ==  gpio_input_bit_get(GPIOF, GPIO_PIN_0)) board_id += 1 ;
-    if(SET ==  gpio_input_bit_get(GPIOF, GPIO_PIN_1)) board_id += 2 ;
-    if(SET ==  gpio_input_bit_get(GPIOB, GPIO_PIN_1)) board_id += 4 ;
-    usart_data_transmit(USART0, board_id);
+    overtime = 0 ;
+    rx_count = 0 ;
     
-    if(board_id == 7){ // if is plug , set PB1 output
-      gpio_deinit(GPIOB);
-      gpio_mode_set(GPIOB, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_PIN_1);
-      gpio_output_options_set(GPIOB, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_1);
-    }
+    AD_config();
     
-    pullup_en   = 0 ;
-    pulldown_en = 0 ;
+    //for(rx_count = 0;rx_count < 221;rx_count ++)
+    //  {
+    //    usart_data_transmit(USART0, rx_count);
+    //    while (RESET == usart_flag_get(USART0 , USART_FLAG_TC));
+    //  }
     
-    delay_1ms(12);
-    IO595_oe_H ;
-    
-    
-    Prashort_L ;
-    Pshort_L ;
-    Nshort_L ;
-
     while(1){
+      //while(overtime < 1000) overtime ++ ;
+      //usart_data_transmit(USART0, rx_count);
+      //
+      //if(rx_count > 10) IO595_clk_L ;
+      //else IO595_clk_H ;
+      //rx_count = 0 ;
+      //while(overtime > 999) ;
+      timer_enable(TIMER1);
+      while( !dma_flag_get(DMA_CH0,DMA_FLAG_FTF ));
+      
+      /* clear channel1 transfer complete flag */
+      dma_flag_clear(DMA_CH0,DMA_FLAG_FTF ); 
+      timer_disable(TIMER1);
+      for(rx_count = 0;rx_count < 221;rx_count ++)
+      {
+        usart_data_transmit(USART0, ad_value[rx_count]>>8);
+        while (RESET == usart_flag_get(USART0 , USART_FLAG_TC));
+        usart_data_transmit(USART0, ad_value[rx_count]&0xff);
+        while (RESET == usart_flag_get(USART0 , USART_FLAG_TC));
+      }
     }
 }
