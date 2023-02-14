@@ -63,9 +63,11 @@ unsigned char rx_count ;
 unsigned char Tx_buffer[128] ;
 unsigned char Tx_count ;
 
+unsigned char dmadone ;
+
 unsigned int overtime , maxmin ;
 
-__IO uint16_t ad_value[220];
+__IO uint16_t ad_value[256];
 
 void RCC_Configuration(void)
 {
@@ -156,6 +158,13 @@ void IOpin_init(void)
   gpio_output_options_set(GPIOA, GPIO_OTYPE_OD, GPIO_OSPEED_50MHZ,GPIO_PIN_4);
   
   gpio_mode_set(GPIOA, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,GPIO_PIN_0);
+  gpio_mode_set(GPIOA, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,GPIO_PIN_1);
+  gpio_mode_set(GPIOA, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,GPIO_PIN_2);
+  gpio_mode_set(GPIOA, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,GPIO_PIN_3);
+  gpio_mode_set(GPIOA, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,GPIO_PIN_4);
+  gpio_mode_set(GPIOA, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,GPIO_PIN_5);
+  gpio_mode_set(GPIOA, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,GPIO_PIN_6);
+  gpio_mode_set(GPIOA, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,GPIO_PIN_7);
   
   //rcu_periph_clock_enable(RCU_GPIOF);
   //gpio_deinit(GPIOF);
@@ -193,7 +202,7 @@ void AD_config(void)
   dma_init_struct.memory_addr = (uint32_t)ad_value;
   dma_init_struct.memory_inc = DMA_MEMORY_INCREASE_ENABLE;
   dma_init_struct.memory_width = DMA_MEMORY_WIDTH_16BIT;
-  dma_init_struct.number = 220;
+  dma_init_struct.number = 256;
   dma_init_struct.periph_addr = (uint32_t)&(ADC_RDATA);
   dma_init_struct.periph_inc = DMA_PERIPH_INCREASE_DISABLE;
   dma_init_struct.periph_width = DMA_PERIPHERAL_WIDTH_16BIT;
@@ -203,7 +212,10 @@ void AD_config(void)
   /* configure DMA mode */
   dma_circulation_enable(DMA_CH0);
   dma_memory_to_memory_disable(DMA_CH0);
-
+  
+  /* enable DMA channel0 interrupt */
+  dma_interrupt_enable(DMA_CH0, DMA_INT_FTF);
+  nvic_irq_enable(DMA_Channel0_IRQn, 1, 1);
   /* enable DMA channel0 */
   dma_channel_enable(DMA_CH0);
   
@@ -231,10 +243,17 @@ void AD_config(void)
   
   /*  ------------------------------- ADC configuration  ------------------------------- */
   /* ADC channel length config */
-  adc_channel_length_config(ADC_REGULAR_CHANNEL,1);
+  adc_channel_length_config(ADC_REGULAR_CHANNEL,8);
 
   /* ADC regular channel config */
   adc_regular_channel_config(0,ADC_CHANNEL_0,ADC_SAMPLETIME_55POINT5);
+  adc_regular_channel_config(1,ADC_CHANNEL_1,ADC_SAMPLETIME_55POINT5);
+  adc_regular_channel_config(2,ADC_CHANNEL_2,ADC_SAMPLETIME_55POINT5);
+  adc_regular_channel_config(3,ADC_CHANNEL_3,ADC_SAMPLETIME_55POINT5);
+  adc_regular_channel_config(4,ADC_CHANNEL_4,ADC_SAMPLETIME_55POINT5);
+  adc_regular_channel_config(5,ADC_CHANNEL_5,ADC_SAMPLETIME_55POINT5);
+  adc_regular_channel_config(6,ADC_CHANNEL_6,ADC_SAMPLETIME_55POINT5);
+  adc_regular_channel_config(7,ADC_CHANNEL_7,ADC_SAMPLETIME_55POINT5);
 
   /* ADC external trigger enable */
   adc_external_trigger_config(ADC_REGULAR_CHANNEL,ENABLE);
@@ -253,6 +272,12 @@ void AD_config(void)
   
   /* TIMER1 counter enable */
   //timer_enable(TIMER1);
+}
+
+void DMA_Channel0_IRQHandler(void)
+{
+  dmadone = 1 ;
+  dma_interrupt_flag_clear(DMA_CH0, DMA_INT_FTF);
 }
 
 /*!
@@ -277,14 +302,9 @@ int main(void)
     
     overtime = 0 ;
     rx_count = 0 ;
+    dmadone = 0 ;
     
     AD_config();
-    
-    //for(rx_count = 0;rx_count < 221;rx_count ++)
-    //  {
-    //    usart_data_transmit(USART0, rx_count);
-    //    while (RESET == usart_flag_get(USART0 , USART_FLAG_TC));
-    //  }
     
     while(1){
       //while(overtime < 1000) overtime ++ ;
@@ -295,17 +315,23 @@ int main(void)
       //rx_count = 0 ;
       //while(overtime > 999) ;
       timer_enable(TIMER1);
-      while( !dma_flag_get(DMA_CH0,DMA_FLAG_FTF ));
-      
-      /* clear channel1 transfer complete flag */
-      dma_flag_clear(DMA_CH0,DMA_FLAG_FTF ); 
+      //while( !dma_flag_get(DMA_CH0,DMA_FLAG_FTF ));
+      //
+      ///* clear channel1 transfer complete flag */
+      //dma_flag_clear(DMA_CH0,DMA_FLAG_FTF ); 
+      while(dmadone == 0) ;
+      dmadone = 0 ;
       timer_disable(TIMER1);
-      for(rx_count = 0;rx_count < 221;rx_count ++)
+      for(rx_count = 0;rx_count < 255;rx_count ++)
       {
         usart_data_transmit(USART0, ad_value[rx_count]>>8);
         while (RESET == usart_flag_get(USART0 , USART_FLAG_TC));
         usart_data_transmit(USART0, ad_value[rx_count]&0xff);
         while (RESET == usart_flag_get(USART0 , USART_FLAG_TC));
       }
+      usart_data_transmit(USART0, ad_value[255]>>8);
+      while (RESET == usart_flag_get(USART0 , USART_FLAG_TC));
+      usart_data_transmit(USART0, ad_value[255]&0xff);
+      while (RESET == usart_flag_get(USART0 , USART_FLAG_TC));
     }
 }
